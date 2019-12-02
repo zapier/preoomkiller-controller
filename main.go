@@ -158,10 +158,12 @@ func main() {
 	flag.IntVar(&interval, "interval", 60, "Interval (in seconds)")
 	flag.StringVar(&loglevel, "loglevel", "info", "Log level, one of debug, info, warn, error")
 	flag.StringVar(&logformat, "logformat", "text", "Log format, one of json, text")
+	flag.Set("logtostderr", "true")
 	flag.Parse()
 
 	// Setup logging
 	log.SetOutput(os.Stdout)
+
 	switch logformat {
 	case "json":
 		log.SetFormatter(&log.JSONFormatter{})
