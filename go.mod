@@ -13,6 +13,7 @@ require (
 	github.com/json-iterator/go v1.1.8 // indirect
 	github.com/modern-go/reflect2 v1.0.1 // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
+	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/pflag v1.0.5 // indirect
 	golang.org/x/crypto v0.0.0-20191108234033-bd318be0434a // indirect
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45 // indirect
@@ -21,7 +22,6 @@ require (
 	k8s.io/api v0.0.0-20181204000039-89a74a8d264d
 	k8s.io/apimachinery v0.0.0-20181127025237-2b1284ed4c93
 	k8s.io/client-go v10.0.0+incompatible
-	k8s.io/klog v1.0.0
 	k8s.io/metrics v0.0.0-20181204004214-b555beb219ef
 	k8s.io/utils v0.0.0-20191030222137-2b95a09bc58d // indirect
 	sigs.k8s.io/yaml v1.1.0 // indirect

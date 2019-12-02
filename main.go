@@ -8,8 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"k8s.io/klog"
-
+	log "github.com/sirupsen/logrus"
 	policy "k8s.io/api/policy/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -74,11 +73,13 @@ func evictPod(client kubernetes.Interface, podName, podNamespace, policyGroupVer
 
 // RunOnce runs one sigle iteration of reconciliation loop
 func (c *Controller) RunOnce() error {
+	evictionCount := 0
+
 	podList, err := c.clientset.CoreV1().Pods("").List(meta_v1.ListOptions{
 		LabelSelector: PreoomkillerPodLabelSelector,
 	})
 	if err != nil {
-		klog.Errorf("Error during listing pods for label selector %s: %s", PreoomkillerPodLabelSelector, err)
+		log.Errorf("PodListError for label selector %s: %s", PreoomkillerPodLabelSelector, err)
 		return err
 	}
 
@@ -86,31 +87,43 @@ func (c *Controller) RunOnce() error {
 		podName, podNamespace := pod.ObjectMeta.Name, pod.ObjectMeta.Namespace
 		podMemoryThreshold, err := resource.ParseQuantity(pod.ObjectMeta.Annotations[PreoomkillerAnnotationMemoryThresholdKey])
 		if err != nil {
-			klog.Errorf("Error during fetching memory theshold for pod %s: %s", podName, err)
-			return err
+			log.WithFields(log.Fields{
+				"pod":       podName,
+				"namespace": podNamespace,
+			}).Errorf("PodMemoryThresholdFetchError: %s", err)
+			continue
 		}
-		klog.Infof("Memory threshold for pod %s: %s", podName, podMemoryThreshold.String())
+
+		podLog := log.WithFields(log.Fields{
+			"pod":             podName,
+			"namespace":       podNamespace,
+			"memoryThreshold": podMemoryThreshold.String(),
+		})
 
 		podMemoryUsage := &resource.Quantity{}
 
 		podMetrics, err := c.metricsClientset.MetricsV1beta1().PodMetricses(podNamespace).Get(podName, meta_v1.GetOptions{})
 		if err != nil {
-			klog.Errorf("Error during fetching metrics for pod %s: %s", podName, err)
+			podLog.Errorf("PodMetricsFetchError: %s", err)
 			return err
 		}
 
 		for _, containerMetrics := range podMetrics.Containers {
 			podMemoryUsage.Add(*containerMetrics.Usage.Memory())
-			klog.Infof("Container metrics for %s: %s (cpu), %s (mem)", containerMetrics.Name, containerMetrics.Usage.Cpu().String(), containerMetrics.Usage.Memory().String())
+			podLog.Debugf("Container metrics for %s: %s (cpu), %s (mem)", containerMetrics.Name, containerMetrics.Usage.Cpu().String(), containerMetrics.Usage.Memory().String())
 		}
-		klog.Infof("Pod memory metrics for %q: %v", podName, podMemoryUsage)
+		podLog.Debugf("Pod memory usage: %v", podMemoryUsage.String())
 		if podMemoryUsage.Cmp(podMemoryThreshold) == 1 {
 			_, err := evictPod(c.clientset, podName, podNamespace, "v1", false)
 			if err != nil {
-				klog.Errorf("Error during evicting pod %q: %v", podName, err)
+				podLog.Errorf("PodEvictionError: %v", err)
+			} else {
+				evictionCount += 1
+				podLog.Infof("PodEvicted with memory usage: %v", podMemoryUsage)
 			}
 		}
 	}
+	log.Infof("%d pods evicted during this run", evictionCount)
 	return nil
 }
 
@@ -122,12 +135,12 @@ func (c *Controller) Run(stopCh chan struct{}) {
 	for {
 		err := c.RunOnce()
 		if err != nil {
-			klog.Error(err)
+			log.Error(err)
 		}
 		select {
 		case <-ticker.C:
 		case <-stopCh:
-			klog.Info("Terminating main controller loop")
+			log.Info("Terminating main controller loop")
 			return
 		}
 	}
@@ -136,29 +149,56 @@ func (c *Controller) Run(stopCh chan struct{}) {
 func main() {
 	var kubeconfig string
 	var master string
+	var loglevel string
+	var logformat string
 	var interval int
 
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "absolute path to the kubeconfig file")
 	flag.StringVar(&master, "master", "", "master url")
 	flag.IntVar(&interval, "interval", 60, "Interval (in seconds)")
+	flag.StringVar(&loglevel, "loglevel", "info", "Log level, one of debug, info, warn, error")
+	flag.StringVar(&logformat, "logformat", "text", "Log format, one of json, text")
 	flag.Parse()
+
+	// Setup logging
+	log.SetOutput(os.Stdout)
+	switch logformat {
+	case "json":
+		log.SetFormatter(&log.JSONFormatter{})
+	case "text":
+	default:
+		log.SetFormatter(&log.TextFormatter{})
+
+	}
+
+	switch loglevel {
+	case "debug":
+		log.SetLevel(log.DebugLevel)
+	case "warn":
+		log.SetLevel(log.WarnLevel)
+	case "error":
+		log.SetLevel(log.ErrorLevel)
+	case "info":
+	default:
+		log.SetLevel(log.InfoLevel)
+	}
 
 	// creates the connection
 	config, err := clientcmd.BuildConfigFromFlags(master, kubeconfig)
 	if err != nil {
-		klog.Fatal(err)
+		log.Fatal(err)
 	}
 
 	// creates the clientset
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		klog.Fatal(err)
+		log.Fatal(err)
 	}
 
 	//
 	metricsClientset, err := metricsv.NewForConfig(config)
 	if err != nil {
-		klog.Fatal(err)
+		log.Fatal(err)
 	}
 
 	controller := NewController(clientset, metricsClientset, time.Duration(interval)*time.Second)
@@ -174,6 +214,6 @@ func handleSigterm(stopCh chan struct{}) {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM)
 	<-signals
-	klog.Info("Received SIGTERM. Terminating...")
+	log.Info("Received SIGTERM. Terminating...")
 	close(stopCh)
 }
