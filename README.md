@@ -27,6 +27,7 @@ available.
 kubectl -n kube-system create serviceaccount preoomkiller-controller
 
 cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: preoomkiller-controller
