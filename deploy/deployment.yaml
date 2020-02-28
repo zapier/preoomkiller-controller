@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    run: preoomkiller
+  name: preoomkiller
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      run: preoomkiller
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        run: preoomkiller
+    spec:
+      containers:
+      - image: zapier/preoomkiller-controller:latest
+        imagePullPolicy: Always
+        name: preoomkiller
+      restartPolicy: Always
+      serviceAccount: preoomkiller-controller
+      serviceAccountName: preoomkiller-controller
+      terminationGracePeriodSeconds: 30
