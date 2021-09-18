@@ -209,7 +209,6 @@ func main() {
 	// Now let's start the controller
 	stopCh := make(chan struct{})
 	go handleSigterm(stopCh)
-	defer close(stopCh)
 	controller.Run(stopCh)
 }
 
